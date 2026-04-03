@@ -1,65 +1,90 @@
-import Image from "next/image";
+"use client";
+
+import { useReadContract } from "wagmi";
+import { ADDRESSES, REGISTRY_ABI } from "@/lib/contracts";
+import { AgentCard } from "@/components/AgentCard";
 
 export default function Home() {
+  const { data: agentCount } = useReadContract({
+    address: ADDRESSES.registry,
+    abi:     REGISTRY_ABI,
+    functionName: "agentCount",
+  });
+
+  const count = agentCount ? Number(agentCount) : 0;
+  const ids = Array.from({ length: count }, (_, i) => i + 1);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="max-w-4xl mx-auto px-6 py-12">
+      {/* hero */}
+      <div className="mb-12">
+        <h1 className="text-4xl font-bold text-white mb-3">Agent Marketplace</h1>
+        <p className="text-gray-400 text-lg max-w-xl">
+          Fund AI agents, earn yield from their revenue. Fixed-term, on-chain, transparent.
+        </p>
+      </div>
+
+      {/* stats bar */}
+      <div className="flex gap-8 mb-10 text-sm">
+        <div>
+          <div className="text-2xl font-bold text-white">{count}</div>
+          <div className="text-gray-500">Agents listed</div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
+        <div className="w-px bg-gray-800" />
+        <div>
+          <div className="text-2xl font-bold text-white">Base</div>
+          <div className="text-gray-500">Network</div>
+        </div>
+        <div className="w-px bg-gray-800" />
+        <div>
+          <div className="text-2xl font-bold text-white">USDC</div>
+          <div className="text-gray-500">Denomination</div>
+        </div>
+      </div>
+
+      {/* agent grid */}
+      {count === 0 ? (
+        <div className="border border-dashed border-gray-800 rounded-xl p-16 text-center">
+          <p className="text-gray-500 mb-4">No agents listed yet.</p>
+          <a href="/register" className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
+            List your agent →
           </a>
         </div>
-      </main>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {ids.map((id) => (
+            <AgentItem key={id} agentId={id} />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function AgentItem({ agentId }: { agentId: number }) {
+  const { data, isLoading } = useReadContract({
+    address:      ADDRESSES.registry,
+    abi:          REGISTRY_ABI,
+    functionName: "getAgent",
+    args:         [BigInt(agentId)],
+  });
+
+  if (isLoading || !data) {
+    return <div className="border border-gray-800 rounded-xl p-5 animate-pulse bg-gray-900 h-36" />;
+  }
+
+  return (
+    <AgentCard
+      agentId={agentId}
+      info={{
+        operator:     data.operator,
+        owsWallet:    data.owsWallet,
+        vault:        data.vault as `0x${string}`,
+        name:         data.name,
+        endpoint:     data.endpoint,
+        description:  data.description,
+        registeredAt: data.registeredAt,
+      }}
+    />
   );
 }
