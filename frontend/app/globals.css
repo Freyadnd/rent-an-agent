@@ -1,26 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;1,14..32,400&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* OWS dark palette (Mantine dark-0..dark-9) */
+  --dark-0: #C9C9C9;
+  --dark-1: #b8b8b8;
+  --dark-2: #828282;
+  --dark-3: #696969;
+  --dark-4: #424242;
+  --dark-5: #3b3b3b;
+  --dark-6: #2e2e2e;
+  --dark-7: #242424;
+  --dark-8: #1f1f1f;
+  --dark-9: #141414;
+
+  /* semantic tokens */
+  --bg:          var(--dark-7);   /* #242424 — body */
+  --surface:     var(--dark-6);   /* #2e2e2e — cards, inputs */
+  --surface-alt: var(--dark-5);   /* #3b3b3b — hover */
+  --border:      var(--dark-4);   /* #424242 */
+  --border-dim:  var(--dark-5);   /* #3b3b3b */
+  --text:        var(--dark-0);   /* #C9C9C9 */
+  --text-bright: #ffffff;
+  --muted:       var(--dark-2);   /* #828282 */
+  --placeholder: var(--dark-3);   /* #696969 */
+
+  /* accent — primary colour from OWS theme */
+  --accent:      #d97059;
+  --accent-dim:  rgba(217, 112, 89, 0.15);
+
+  /* mono */
+  --mono: "SF Mono", ui-monospace, "Liberation Mono", Menlo, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background:  var(--bg);
+  color:       var(--text);
+  /* degular from typekit, fallback to Inter */
+  font-family: degular-variable, degular, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size:   15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+a { color: inherit; }
+button { font-family: inherit; }
+
+input, textarea, select {
+  font-family: inherit;
+  color: var(--text);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--placeholder);
+}
+
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: var(--bg); }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 3px; }

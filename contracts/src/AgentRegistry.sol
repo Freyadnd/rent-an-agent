@@ -9,6 +9,10 @@ import {AgentVault} from "./AgentVault.sol";
 contract AgentRegistry {
     // ─────────────────────────────────────────────────────────── types ──
 
+    /// @dev revenueTypes bitmask:
+    ///   bit 0 (0x01) = x402 pay-per-use
+    ///   bit 1 (0x02) = Subscription
+    ///   bit 2 (0x04) = Trading / on-chain tx fees
     struct AgentInfo {
         address operator;       // agent 运营方
         address owsWallet;      // OWS 钱包地址（用于 sweeper 识别来源）
@@ -16,6 +20,7 @@ contract AgentRegistry {
         string  name;           // agent 名称
         string  endpoint;       // AWS API endpoint
         string  description;
+        uint8   revenueTypes;   // bitmask of revenue sources
         uint256 registeredAt;
     }
 
@@ -67,7 +72,8 @@ contract AgentRegistry {
     /// @param description  简介
     /// @param maturity     vault 到期时间戳
     /// @param fundingGoal  募资上限（USDC，6 decimals）
-    /// @param sweeper      初始 sweeper 地址（可以是运营方控制的后端钱包）
+    /// @param sweeper       初始 sweeper 地址（可以是运营方控制的后端钱包）
+    /// @param revenueTypes  收益来源位掩码 (0x01=x402, 0x02=subscription, 0x04=trading)
     function registerAgent(
         address owsWallet,
         string calldata name,
@@ -75,7 +81,8 @@ contract AgentRegistry {
         string calldata description,
         uint256 maturity,
         uint256 fundingGoal,
-        address sweeper
+        address sweeper,
+        uint8   revenueTypes
     ) external returns (uint256 agentId, address vault) {
         if (owsWallet == address(0)) revert ZeroAddress();
         if (maturity <= block.timestamp) revert InvalidMaturity();
@@ -100,12 +107,13 @@ contract AgentRegistry {
         }
 
         agents[agentId] = AgentInfo({
-            operator: msg.sender,
-            owsWallet: owsWallet,
-            vault: vault,
-            name: name,
-            endpoint: endpoint,
-            description: description,
+            operator:     msg.sender,
+            owsWallet:    owsWallet,
+            vault:        vault,
+            name:         name,
+            endpoint:     endpoint,
+            description:  description,
+            revenueTypes: revenueTypes,
             registeredAt: block.timestamp
         });
 

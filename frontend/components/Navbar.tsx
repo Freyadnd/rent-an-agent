@@ -1,25 +1,58 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 export function Navbar() {
+  const path = usePathname();
+
   return (
-    <nav className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-      <div className="flex items-center gap-8">
-        <Link href="/" className="text-lg font-bold tracking-tight text-white">
+    <header style={{
+      borderBottom: "1px solid var(--border)",
+      padding: "0 40px",
+      height: 58,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      position: "sticky",
+      top: 0,
+      background: "rgba(36,36,36,0.90)",
+      backdropFilter: "blur(16px)",
+      zIndex: 100,
+    }}>
+      <nav style={{ display: "flex", alignItems: "center", gap: 40 }}>
+        <Link href="/" style={{
+          fontSize: 15,
+          fontWeight: 600,
+          color: "var(--text-bright)",
+          textDecoration: "none",
+          letterSpacing: "-0.01em",
+        }}>
           rent-an-agent
         </Link>
-        <div className="flex gap-6 text-sm text-gray-400">
-          <Link href="/" className="hover:text-white transition-colors">
-            Marketplace
-          </Link>
-          <Link href="/register" className="hover:text-white transition-colors">
-            List Agent
-          </Link>
+
+        <div style={{ display: "flex", gap: 6 }}>
+          {[
+            { href: "/",         label: "Marketplace" },
+            { href: "/register", label: "List Agent"  },
+          ].map(({ href, label }) => (
+            <Link key={href} href={href} style={{
+              fontSize: 13,
+              padding: "5px 10px",
+              borderRadius: 6,
+              color: path === href ? "var(--text-bright)" : "var(--muted)",
+              textDecoration: "none",
+              background: path === href ? "var(--surface)" : "transparent",
+              transition: "color 0.15s, background 0.15s",
+            }}>
+              {label}
+            </Link>
+          ))}
         </div>
-      </div>
-      <ConnectButton chainStatus="icon" showBalance={false} />
-    </nav>
+      </nav>
+
+      <ConnectButton chainStatus="none" showBalance={false} />
+    </header>
   );
 }

@@ -6,7 +6,7 @@ import { base } from "wagmi/chains";
 export const ADDRESSES = {
   registry:     (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS     ?? "0x") as `0x${string}`,
   subscription: (process.env.NEXT_PUBLIC_SUBSCRIPTION_ADDRESS ?? "0x") as `0x${string}`,
-  usdc:         (process.env.NEXT_PUBLIC_USDC_ADDRESS         ?? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") as `0x${string}`,
+  usdc:         (process.env.NEXT_PUBLIC_USDC_ADDRESS         ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e") as `0x${string}`,
 } as const;
 
 export const CHAIN = base;
@@ -36,6 +36,7 @@ export const REGISTRY_ABI = [
           { name: "name",         type: "string"  },
           { name: "endpoint",     type: "string"  },
           { name: "description",  type: "string"  },
+          { name: "revenueTypes", type: "uint8"   },
           { name: "registeredAt", type: "uint256" },
         ],
       },
@@ -46,13 +47,14 @@ export const REGISTRY_ABI = [
     name: "registerAgent",
     type: "function",
     inputs: [
-      { name: "owsWallet",   type: "address" },
-      { name: "name",        type: "string"  },
-      { name: "endpoint",    type: "string"  },
-      { name: "description", type: "string"  },
-      { name: "maturity",    type: "uint256" },
-      { name: "fundingGoal", type: "uint256" },
-      { name: "sweeper",     type: "address" },
+      { name: "owsWallet",    type: "address" },
+      { name: "name",         type: "string"  },
+      { name: "endpoint",     type: "string"  },
+      { name: "description",  type: "string"  },
+      { name: "maturity",     type: "uint256" },
+      { name: "fundingGoal",  type: "uint256" },
+      { name: "sweeper",      type: "address" },
+      { name: "revenueTypes", type: "uint8"   },
     ],
     outputs: [
       { name: "agentId", type: "uint256" },

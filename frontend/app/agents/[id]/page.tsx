@@ -1,37 +1,51 @@
 "use client";
 
-import { use } from "react";
-import { useAccount, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { use, useState } from "react";
+import {
+  useAccount, useReadContract, useReadContracts,
+  useWriteContract, useWaitForTransactionReceipt,
+} from "wagmi";
 import { formatUnits, parseUnits } from "viem";
-import { useState } from "react";
 import { ADDRESSES, REGISTRY_ABI, VAULT_ABI, ERC20_ABI } from "@/lib/contracts";
 
-export default function AgentPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const agentId = BigInt(id);
+const REVENUE_LABELS = [
+  { bit: 0x01, label: "x402"         },
+  { bit: 0x02, label: "Subscription" },
+  { bit: 0x04, label: "Trading"      },
+];
 
+const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+function fmtTimeLeft(sec: number) {
+  if (sec <= 0) return "Matured";
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  return d > 0 ? `${d}d ${h}h remaining` : `${h}h remaining`;
+}
+
+export default function AgentPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id }      = use(params);
+  const agentId     = BigInt(id);
   const { address } = useAccount();
 
-  const { data: agentInfo, isLoading: agentLoading } = useReadContract({
-    address:      ADDRESSES.registry,
-    abi:          REGISTRY_ABI,
-    functionName: "getAgent",
-    args:         [agentId],
+  const { data: agentInfo, isLoading } = useReadContract({
+    address: ADDRESSES.registry, abi: REGISTRY_ABI,
+    functionName: "getAgent", args: [agentId],
   });
 
   const vaultAddress = agentInfo?.vault as `0x${string}` | undefined;
 
   const { data, refetch } = useReadContracts({
     contracts: [
-      { address: vaultAddress, abi: VAULT_ABI, functionName: "status" },
+      { address: vaultAddress, abi: VAULT_ABI, functionName: "status"      },
       { address: vaultAddress, abi: VAULT_ABI, functionName: "fundingGoal" },
-      { address: vaultAddress, abi: VAULT_ABI, functionName: "maturity" },
+      { address: vaultAddress, abi: VAULT_ABI, functionName: "maturity"    },
       ...(address ? [
-        { address: vaultAddress, abi: VAULT_ABI, functionName: "shares",        args: [address] },
-        { address: vaultAddress, abi: VAULT_ABI, functionName: "redeemed",      args: [address] },
-        { address: vaultAddress, abi: VAULT_ABI, functionName: "previewRedeem", args: [address] },
-        { address: ADDRESSES.usdc, abi: ERC20_ABI, functionName: "allowance",   args: [address, vaultAddress!] },
-        { address: ADDRESSES.usdc, abi: ERC20_ABI, functionName: "balanceOf",   args: [address] },
+        { address: vaultAddress,   abi: VAULT_ABI, functionName: "shares",        args: [address] },
+        { address: vaultAddress,   abi: VAULT_ABI, functionName: "redeemed",      args: [address] },
+        { address: vaultAddress,   abi: VAULT_ABI, functionName: "previewRedeem", args: [address] },
+        { address: ADDRESSES.usdc, abi: ERC20_ABI, functionName: "allowance",     args: [address, vaultAddress!] },
+        { address: ADDRESSES.usdc, abi: ERC20_ABI, functionName: "balanceOf",     args: [address] },
       ] : []),
     ],
     query: { enabled: !!vaultAddress },
@@ -46,136 +60,237 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
   const allowance   = data?.[6]?.result as bigint | undefined;
   const usdcBalance = data?.[7]?.result as bigint | undefined;
 
-  const deposited   = status ? Number(formatUnits(status[0], 6)) : 0;
-  const revenue     = status ? Number(formatUnits(status[1], 6)) : 0;
-  const timeLeftSec = status ? Number(status[3]) : 0;
-  const matured     = status?.[4] ?? false;
-  const goal        = fundingGoal ? Number(formatUnits(fundingGoal, 6)) : 0;
-  const fillPct     = goal ? Math.min(100, (deposited / goal) * 100) : 0;
+  const deposited    = status ? Number(formatUnits(status[0], 6)) : 0;
+  const revenue      = status ? Number(formatUnits(status[1], 6)) : 0;
+  const timeLeftSec  = status ? Number(status[3]) : 0;
+  const matured      = status?.[4] ?? false;
+  const goal         = fundingGoal ? Number(formatUnits(fundingGoal, 6)) : 0;
+  const fillPct      = goal ? Math.min(100, (deposited / goal) * 100) : 0;
   const maturityDate = maturity ? new Date(Number(maturity) * 1000) : null;
+  const myShares     = lpShares    ? Number(formatUnits(lpShares,    6)) : 0;
+  const myPayout     = preview     ? Number(formatUnits(preview,     6)) : 0;
+  const myBalance    = usdcBalance ? Number(formatUnits(usdcBalance, 6)) : 0;
 
-  const myShares  = lpShares  ? Number(formatUnits(lpShares,  6)) : 0;
-  const myPayout  = preview   ? Number(formatUnits(preview,   6)) : 0;
-  const myBalance = usdcBalance ? Number(formatUnits(usdcBalance, 6)) : 0;
+  const yieldEst = myShares > 0 && myPayout >= myShares
+    ? ((myPayout - myShares) / myShares * 100).toFixed(2)
+    : null;
 
-  if (agentLoading) {
-    return (
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-800 rounded w-1/2" />
-          <div className="h-4 bg-gray-800 rounded w-3/4" />
-          <div className="h-48 bg-gray-800 rounded-xl" />
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton />;
+  if (!agentInfo) return (
+    <Centered><span style={{ color: "var(--muted)" }}>Agent not found.</span></Centered>
+  );
 
-  if (!agentInfo) return <div className="p-12 text-gray-500">Agent not found.</div>;
+  const revenueLabels = REVENUE_LABELS.filter(({ bit }) => (agentInfo.revenueTypes & bit) !== 0);
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-12 space-y-6">
-      {/* header */}
-      <div>
-        <div className="flex items-center gap-3 mb-2">
-          <h1 className="text-3xl font-bold text-white">{agentInfo.name}</h1>
-          <span className={`text-xs px-2 py-1 rounded-full ${matured ? "bg-yellow-900 text-yellow-300" : "bg-green-900 text-green-300"}`}>
-            {matured ? "Matured" : "Active"}
-          </span>
-        </div>
-        <p className="text-gray-400">{agentInfo.description}</p>
-        <a href={agentInfo.endpoint} target="_blank" rel="noreferrer"
-           className="text-xs text-blue-400 hover:text-blue-300 mt-1 inline-block">
-          {agentInfo.endpoint} ↗
-        </a>
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: "52px 40px 80px" }}>
+
+      {/* breadcrumb */}
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 28 }}>
+        <a href="/" style={{ color: "var(--muted)", textDecoration: "none" }}>Marketplace</a>
+        <span style={{ margin: "0 8px" }}>›</span>
+        <span style={{ color: "var(--text)" }}>{agentInfo.name}</span>
       </div>
 
-      {/* vault stats */}
-      <div className="border border-gray-800 rounded-xl p-6 space-y-4 bg-gray-900">
-        <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Vault</h2>
+      {/* header */}
+      <div style={{ marginBottom: 40 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+          <h1 style={{
+            fontSize: 30,
+            fontWeight: 700,
+            margin: 0,
+            letterSpacing: "-0.025em",
+            color: "var(--text-bright)",
+          }}>
+            {agentInfo.name}
+          </h1>
+          <span style={{
+            fontSize: 11, fontWeight: 500,
+            padding: "3px 10px", borderRadius: 20,
+            border: `1px solid ${matured ? "var(--border)" : "var(--accent)"}`,
+            color: matured ? "var(--muted)" : "var(--accent)",
+          }}>
+            {matured ? "matured" : "active"}
+          </span>
+        </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <Stat label="Raised" value={`$${deposited.toLocaleString()}`} sub={`of $${goal.toLocaleString()}`} />
-          <Stat label="Revenue" value={`$${revenue.toLocaleString()}`} />
+        {agentInfo.description && (
+          <p style={{ margin: "0 0 14px", color: "var(--muted)", fontSize: 15, lineHeight: 1.65 }}>
+            {agentInfo.description}
+          </p>
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <a href={agentInfo.endpoint} target="_blank" rel="noreferrer" style={{
+            fontSize: 12,
+            color: "var(--muted)",
+            textDecoration: "none",
+            fontFamily: "var(--mono)",
+            padding: "3px 8px",
+            borderRadius: 4,
+            background: "var(--dark-8)",
+            border: "1px solid var(--border)",
+          }}>
+            {agentInfo.endpoint} ↗
+          </a>
+          {revenueLabels.map(({ label }) => (
+            <span key={label} style={{
+              fontSize: 11, padding: "3px 8px", borderRadius: 4,
+              background: "var(--dark-8)", border: "1px solid var(--border)",
+              color: "var(--muted)", fontFamily: "var(--mono)",
+            }}>
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* vault overview */}
+      <Card style={{ marginBottom: 16 }}>
+        <SectionLabel>Vault</SectionLabel>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", marginTop: 4 }}>
+          <Stat label="Total raised" value={`$${fmt(deposited)}`} sub={`of $${fmt(goal)}`} />
+          <Stat label="Revenue earned" value={`$${fmt(revenue)}`} accent={revenue > 0} border />
           <Stat
-            label={matured ? "Matured" : "Time left"}
-            value={matured ? "✓" : formatTimeLeft(timeLeftSec)}
-            sub={maturityDate ? maturityDate.toLocaleDateString() : ""}
+            label={matured ? "Status" : "Matures"}
+            value={matured ? "Matured" : fmtTimeLeft(timeLeftSec)}
+            sub={maturityDate?.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            border
           />
         </div>
 
-        {/* funding progress */}
-        <div>
-          <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${fillPct}%` }} />
+        {/* bar */}
+        <div style={{ marginTop: 20 }}>
+          <div style={{
+            height: 4, background: "var(--dark-8)",
+            borderRadius: 2, overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              width: `${fillPct}%`,
+              background: matured ? "var(--border)" : "var(--accent)",
+              borderRadius: 2,
+              transition: "width 0.4s ease",
+            }} />
           </div>
-          <div className="text-xs text-gray-500 mt-1">{fillPct.toFixed(1)}% funded</div>
+          <div style={{
+            display: "flex", justifyContent: "space-between",
+            marginTop: 8, fontSize: 12, color: "var(--muted)",
+          }}>
+            <span>{fillPct.toFixed(1)}% funded</span>
+            <span>{matured ? "Term complete" : `$${fmt(goal - deposited)} remaining`}</span>
+          </div>
         </div>
-      </div>
+      </Card>
 
       {/* LP position */}
       {address && myShares > 0 && (
-        <div className="border border-gray-700 rounded-xl p-6 bg-gray-900 space-y-3">
-          <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Your Position</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <Stat label="Deposited" value={`$${myShares.toLocaleString()}`} />
-            <Stat label="Est. payout" value={`$${myPayout.toLocaleString()}`} />
+        <Card style={{ marginBottom: 16 }}>
+          <SectionLabel>Your position</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", marginTop: 4 }}>
+            <Stat label="Deposited"   value={`$${fmt(myShares)}`} />
+            <Stat label="Est. payout" value={`$${fmt(myPayout)}`} border />
+            <Stat label="Est. yield"  value={yieldEst ? `+${yieldEst}%` : "—"} accent={!!yieldEst} border />
           </div>
           {matured && !hasRedeemed && vaultAddress && (
-            <RedeemButton vaultAddress={vaultAddress} onSuccess={refetch} />
+            <div style={{ marginTop: 20 }}>
+              <RedeemButton vaultAddress={vaultAddress} onSuccess={refetch} />
+            </div>
           )}
           {hasRedeemed && (
-            <p className="text-sm text-green-400">Redeemed ✓</p>
+            <div style={{ marginTop: 16, fontSize: 13, color: "var(--muted)" }}>
+              ✓ Redeemed
+            </div>
           )}
-        </div>
+        </Card>
       )}
 
-      {/* deposit form */}
+      {/* deposit */}
       {!matured && address && vaultAddress && (
-        <DepositForm
-          vaultAddress={vaultAddress}
-          usdcBalance={myBalance}
-          allowance={allowance ?? 0n}
-          onSuccess={refetch}
-        />
+        <Card>
+          <SectionLabel>Deposit USDC</SectionLabel>
+          <div style={{ marginTop: 16 }}>
+            <DepositForm
+              vaultAddress={vaultAddress}
+              usdcBalance={myBalance}
+              allowance={allowance ?? 0n}
+              onSuccess={refetch}
+            />
+          </div>
+        </Card>
       )}
 
       {!address && (
-        <p className="text-center text-gray-500 text-sm py-4">
-          Connect your wallet to deposit or view your position.
-        </p>
-      )}
-
-      {matured && !address && (
-        <p className="text-center text-gray-500 text-sm py-4">
-          This vault has matured. Connect wallet to redeem.
-        </p>
+        <Card>
+          <p style={{ margin: 0, textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "12px 0" }}>
+            Connect your wallet to deposit or view your position.
+          </p>
+        </Card>
       )}
     </div>
   );
 }
 
-// ─── sub-components ──────────────────────────────────────────────────────────
+// ─── shared UI ───────────────────────────────────────────────────────────────
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div>
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div className="text-xl font-semibold text-white">{value}</div>
-      {sub && <div className="text-xs text-gray-600 mt-0.5">{sub}</div>}
+    <div style={{
+      border: "1px solid var(--border)",
+      borderRadius: 10,
+      padding: "22px 24px",
+      background: "var(--surface)",
+      ...style,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontSize: 11, fontWeight: 600,
+      textTransform: "uppercase", letterSpacing: "0.08em",
+      color: "var(--muted)",
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function Stat({ label, value, sub, accent, border }: {
+  label:   string;
+  value:   string;
+  sub?:    string;
+  accent?: boolean;
+  border?: boolean;
+}) {
+  return (
+    <div style={{
+      padding: "16px 0",
+      paddingLeft: border ? 20 : 0,
+      borderLeft: border ? "1px solid var(--dark-8)" : "none",
+    }}>
+      <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: accent ? "var(--accent)" : "var(--text-bright)", letterSpacing: "-0.02em" }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }
 
 function DepositForm({
-  vaultAddress,
-  usdcBalance,
-  allowance,
-  onSuccess,
+  vaultAddress, usdcBalance, allowance, onSuccess,
 }: {
   vaultAddress: `0x${string}`;
-  usdcBalance: number;
-  allowance: bigint;
-  onSuccess: () => void;
+  usdcBalance:  number;
+  allowance:    bigint;
+  onSuccess:    () => void;
 }) {
   const [amount, setAmount] = useState("");
   const { writeContract, data: txHash, isPending } = useWriteContract();
@@ -183,68 +298,56 @@ function DepositForm({
 
   if (isSuccess) onSuccess();
 
-  const amountBig = amount ? parseUnits(amount, 6) : 0n;
-  const needsApproval = amountBig > 0n && allowance < amountBig;
-
-  function handleApprove() {
-    writeContract({
-      address: ADDRESSES.usdc,
-      abi: ERC20_ABI,
-      functionName: "approve",
-      args: [vaultAddress, amountBig],
-    });
-  }
-
-  function handleDeposit() {
-    writeContract({
-      address: vaultAddress,
-      abi: VAULT_ABI,
-      functionName: "deposit",
-      args: [amountBig],
-    });
-  }
+  const amountBig    = amount ? parseUnits(amount, 6) : 0n;
+  const needsApprove = amountBig > 0n && allowance < amountBig;
+  const busy         = isPending || isConfirming;
 
   return (
-    <div className="border border-gray-800 rounded-xl p-6 bg-gray-900 space-y-4">
-      <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Deposit USDC</h2>
-
-      <div className="flex gap-2">
-        <input
-          type="number"
-          placeholder="Amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500"
-        />
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ position: "relative", flex: 1 }}>
+          <input
+            type="number" placeholder="0.00" value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            style={{
+              width: "100%",
+              background: "var(--dark-8)",
+              border: "1px solid var(--border)",
+              borderRadius: 7,
+              padding: "11px 16px",
+              fontSize: 15,
+              outline: "none",
+              color: "var(--text-bright)",
+            }}
+          />
+        </div>
         <button
           onClick={() => setAmount(usdcBalance.toFixed(2))}
-          className="text-xs text-gray-400 hover:text-white px-3 py-2 border border-gray-700 rounded-lg transition-colors"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 7, padding: "11px 16px",
+            color: "var(--muted)", fontSize: 13, cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
         >
           Max
         </button>
       </div>
 
-      <div className="text-xs text-gray-500">
-        Balance: ${usdcBalance.toLocaleString()} USDC
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>
+        Balance: {fmt(usdcBalance)} USDC
       </div>
 
-      {needsApproval ? (
-        <button
-          onClick={handleApprove}
-          disabled={isPending || isConfirming}
-          className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-        >
-          {isPending || isConfirming ? "Approving..." : "Approve USDC"}
-        </button>
-      ) : (
-        <button
-          onClick={handleDeposit}
-          disabled={!amount || isPending || isConfirming}
-          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-        >
-          {isPending || isConfirming ? "Depositing..." : "Deposit"}
-        </button>
-      )}
+      <PrimaryBtn
+        onClick={needsApprove
+          ? () => writeContract({ address: ADDRESSES.usdc, abi: ERC20_ABI, functionName: "approve", args: [vaultAddress, amountBig] })
+          : () => writeContract({ address: vaultAddress, abi: VAULT_ABI, functionName: "deposit", args: [amountBig] })
+        }
+        disabled={!amount || busy}
+      >
+        {busy ? "Waiting for transaction…" : needsApprove ? "Approve USDC" : "Deposit"}
+      </PrimaryBtn>
     </div>
   );
 }
@@ -256,19 +359,59 @@ function RedeemButton({ vaultAddress, onSuccess }: { vaultAddress: `0x${string}`
   if (isSuccess) onSuccess();
 
   return (
-    <button
+    <PrimaryBtn
       onClick={() => writeContract({ address: vaultAddress, abi: VAULT_ABI, functionName: "redeem" })}
       disabled={isPending || isConfirming}
-      className="w-full bg-green-700 hover:bg-green-600 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
     >
-      {isPending || isConfirming ? "Redeeming..." : "Redeem Principal + Yield"}
+      {isPending || isConfirming ? "Waiting for transaction…" : "Redeem Principal + Yield"}
+    </PrimaryBtn>
+  );
+}
+
+function PrimaryBtn({ onClick, disabled, children }: {
+  onClick:  () => void;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      background:   disabled ? "var(--dark-8)" : "var(--accent)",
+      color:        disabled ? "var(--muted)"  : "#fff",
+      border:       "none",
+      borderRadius: 7,
+      padding:      "12px 20px",
+      fontSize:     14,
+      fontWeight:   600,
+      cursor:       disabled ? "not-allowed" : "pointer",
+      width:        "100%",
+      letterSpacing: "-0.01em",
+      transition:   "opacity 0.15s",
+    }}>
+      {children}
     </button>
   );
 }
 
-function formatTimeLeft(sec: number) {
-  if (sec <= 0) return "Matured";
-  const d = Math.floor(sec / 86400);
-  const h = Math.floor((sec % 86400) / 3600);
-  return d > 0 ? `${d}d ${h}h` : `${h}h`;
+function Centered({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "40vh" }}>
+      {children}
+    </div>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: "52px 40px" }}>
+      {[40, 140, 120].map((h, i) => (
+        <div key={i} style={{
+          height: h,
+          background: "var(--surface)",
+          borderRadius: 10,
+          marginBottom: 16,
+          opacity: 0.5,
+        }} />
+      ))}
+    </div>
+  );
 }

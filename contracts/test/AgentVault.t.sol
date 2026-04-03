@@ -83,7 +83,8 @@ contract AgentVaultTest is Test {
             "A test agent",
             maturity,
             FUNDING_GOAL,
-            sweeper
+            sweeper,
+            0x07  // x402 + subscription + trading
         );
 
         vault = AgentVault(registry.getAgent(agentId).vault);
