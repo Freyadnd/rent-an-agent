@@ -4,8 +4,8 @@ import { Providers } from "@/components/Providers";
 import { Navbar }    from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "Rent-an-Agent",
-  description: "Tokenize agent revenue. LP capital meets AI.",
+  title: "Agent Bonds",
+  description: "Tokenized cashflows of AI agents, funded by LPs.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

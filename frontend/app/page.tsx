@@ -54,7 +54,7 @@ export default function Home() {
             lineHeight: 1.1,
             maxWidth: 600,
           }}>
-            Fund agents.<br />Earn their yield.
+            Agent Bonds.
           </h1>
 
           <p style={{
@@ -64,7 +64,7 @@ export default function Home() {
             maxWidth: 480,
             lineHeight: 1.65,
           }}>
-            Deploy AI agents, tokenize their revenue, and let LPs share in the upside. Fixed-term vaults, pro-rata distribution, fully on-chain.
+            Tokenized cashflows of AI agents, funded by LPs.
           </p>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>

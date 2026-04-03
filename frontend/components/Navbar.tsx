@@ -19,7 +19,7 @@ export function Navbar() {
       top: 0,
       background: "rgba(36,36,36,0.90)",
       backdropFilter: "blur(16px)",
-      zIndex: 100,
+      zIndex: 40,
     }}>
       <nav style={{ display: "flex", alignItems: "center", gap: 40 }}>
         <Link href="/" style={{
@@ -29,7 +29,7 @@ export function Navbar() {
           textDecoration: "none",
           letterSpacing: "-0.01em",
         }}>
-          rent-an-agent
+          Agent Bonds
         </Link>
 
         <div style={{ display: "flex", gap: 6 }}>
