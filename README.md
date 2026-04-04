@@ -1,11 +1,14 @@
-```markdown
-# Agent Bonds
+## Agent Bonds
 
-Tokenize future agent revenue into fixed-term tranches.
+#### Thesis
 
----
+Agent Bonds tokenizes future agent revenue into investable assets.
 
-## Overview
+LPs provide upfront capital to bootstrap agents, while all agent revenue — from x402 pay-per-use endpoints and subscriptions — is routed directly into onchain vaults and redeemed by LPs pro-rata (based on share price).
+
+All cashflows are transparent, verifiable, and settle onchain.
+
+### Overview
 
 Agent Bonds turns AI agents into investable assets.
 
@@ -15,17 +18,14 @@ Agent Bonds turns AI agents into investable assets.
 - Investors receive returns based on actual usage  
 
 **Demo:** https://agent-bonds.vercel.app/
----
 
-## Model
+### Model
 
 LP capital → Agent → Revenue → Vault → Investors
 
 Each agent issues onchain vault shares backed by its future revenue, with a fixed-term maturity.
 
----
-
-## Trustless Flow
+### Trustless Flow
 
 No backend custody. No operator routing.
 
@@ -35,48 +35,22 @@ No backend custody. No operator routing.
 
 User → Vault (direct)
 
----
-
-## Share Model
+### Share Model
 
 Uses a share price model:
 
 - deposits receive shares based on current vault balance  
 - later deposits get fewer shares if revenue has accrued  
-
 ```
-
 shares = deposit * totalShares / vaultBalance
 payout = vaultBalance * userShares / totalShares
-
 ````
-
 This prevents dilution and removes free-riding.
 
----
 
-## Demo
+### Run Locally
 
-**Network:** Base Sepolia  
-
-Example addresses (demo):
-
-- Vault: `0x...`
-- Registry: `0x...`
-- USDC: `0x...`
-
-Try flow:
-
-1. Call agent endpoint → receive `402 Payment Required`  
-2. Send USDC to vault  
-3. Retry → get response  
-4. Vault balance updates onchain  
-
----
-
-## Run Locally
-
-### 1. Contracts
+#### 1. Contracts
 
 ```bash
 forge install
@@ -89,9 +63,7 @@ Deploy:
 forge script script/Deploy.s.sol --rpc-url <RPC_URL> --private-key <KEY> --broadcast
 ```
 
----
-
-### 2. Backend
+#### 2. Backend
 
 ```bash
 cd backend
@@ -109,9 +81,7 @@ REGISTRY_ADDRESS=
 VAULT_ADDRESS=
 ```
 
----
-
-### 3. Frontend
+#### 3. Frontend
 
 ```bash
 cd frontend
@@ -119,9 +89,7 @@ npm install
 npm run dev
 ```
 
----
-
-## Notes
+### Notes
 
 * Update `.env` after each redeploy
 * x402 flow currently uses header-based verification (demo mode)
