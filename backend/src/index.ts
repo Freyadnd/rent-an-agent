@@ -1,6 +1,5 @@
 import "dotenv/config";
 import { createServer } from "./server.js";
-import { startSweeper } from "./sweeper.js";
 import { config } from "./config.js";
 
 const app = createServer();
@@ -8,12 +7,7 @@ const app = createServer();
 app.listen(config.port, () => {
   console.log(`[server] Listening on http://localhost:${config.port}`);
   console.log(`[server] Agent ID: ${config.agentId}`);
-  console.log(`[server] Vault:    ${config.vaultAddress ?? "(not configured)"}`);
+  console.log(`[server] Registry: ${config.registryAddress ?? "(not configured)"}`);
+  console.log(`[server] Vault:    ${config.vaultAddress ?? "(resolving from registry…)"}`);
+  console.log(`[server] x402 payTo = vault address (trustless)`);
 });
-
-// Start sweeper cron (only if sweeper key is configured)
-if (config.sweeperPrivateKey) {
-  startSweeper();
-} else {
-  console.warn("[sweeper] SWEEPER_PRIVATE_KEY not set — sweeper disabled.");
-}

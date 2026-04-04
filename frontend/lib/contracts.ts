@@ -1,7 +1,6 @@
 import { base } from "wagmi/chains";
 
 // ─── Addresses ───────────────────────────────────────────────────────────────
-// Fill in after `forge script Deploy`
 
 export const ADDRESSES = {
   registry:     (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS     ?? "0x") as `0x${string}`,
@@ -38,6 +37,7 @@ export const REGISTRY_ABI = [
           { name: "description",  type: "string"  },
           { name: "revenueTypes", type: "uint8"   },
           { name: "registeredAt", type: "uint256" },
+          { name: "bondAmount",   type: "uint256" },
         ],
       },
     ],
@@ -53,13 +53,29 @@ export const REGISTRY_ABI = [
       { name: "description",  type: "string"  },
       { name: "maturity",     type: "uint256" },
       { name: "fundingGoal",  type: "uint256" },
-      { name: "sweeper",      type: "address" },
       { name: "revenueTypes", type: "uint8"   },
     ],
     outputs: [
       { name: "agentId", type: "uint256" },
       { name: "vault",   type: "address" },
     ],
+    stateMutability: "nonpayable",
+  },
+  {
+    name: "postBond",
+    type: "function",
+    inputs: [
+      { name: "agentId", type: "uint256" },
+      { name: "amount",  type: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    name: "withdrawBond",
+    type: "function",
+    inputs: [{ name: "agentId", type: "uint256" }],
+    outputs: [],
     stateMutability: "nonpayable",
   },
 ] as const;
@@ -124,6 +140,20 @@ export const VAULT_ABI = [
     name: "maturity",
     type: "function",
     inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    name: "sharePrice",
+    type: "function",
+    inputs: [],
+    outputs: [{ name: "price", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    name: "depositedAmount",
+    type: "function",
+    inputs: [{ name: "lp", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },

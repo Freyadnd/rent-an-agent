@@ -2,26 +2,28 @@
 pragma solidity ^0.8.24;
 
 import {AgentVault} from "./AgentVault.sol";
+import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 /// @title AgentRegistry
 /// @notice 注册 agent，为每个 agent 部署一个 AgentVault。
-///         记录 agent 的 OWS 钱包地址、AWS endpoint、运营方等元数据。
+///         trading 类 agent 可质押 USDC bond，供 LP 参考信任等级。
 contract AgentRegistry {
     // ─────────────────────────────────────────────────────────── types ──
 
     /// @dev revenueTypes bitmask:
-    ///   bit 0 (0x01) = x402 pay-per-use
-    ///   bit 1 (0x02) = Subscription
-    ///   bit 2 (0x04) = Trading / on-chain tx fees
+    ///   bit 0 (0x01) = x402 pay-per-use  → trustless (payTo = vault)
+    ///   bit 1 (0x02) = Subscription      → trustless (contract routes directly)
+    ///   bit 2 (0x04) = Trading / on-chain → trusted   (operator sweeps manually; bond recommended)
     struct AgentInfo {
-        address operator;       // agent 运营方
-        address owsWallet;      // OWS 钱包地址（用于 sweeper 识别来源）
-        address vault;          // 对应的 AgentVault
-        string  name;           // agent 名称
-        string  endpoint;       // AWS API endpoint
+        address operator;
+        address owsWallet;
+        address vault;
+        string  name;
+        string  endpoint;
         string  description;
-        uint8   revenueTypes;   // bitmask of revenue sources
+        uint8   revenueTypes;
         uint256 registeredAt;
+        uint256 bondAmount;   // USDC held by registry as operator bond
     }
 
     // ─────────────────────────────────────────────────────────── state ──
@@ -29,11 +31,9 @@ contract AgentRegistry {
     address public immutable usdc;
     address public owner;
 
-    // agentId => AgentInfo
     mapping(uint256 => AgentInfo) public agents;
     uint256 public agentCount;
 
-    // owsWallet => agentId（快速查找）
     mapping(address => uint256) public walletToAgent;
 
     // ─────────────────────────────────────────────────────────── events ──
@@ -43,10 +43,11 @@ contract AgentRegistry {
         address indexed operator,
         address indexed vault,
         address owsWallet,
-        string name
+        string  name
     );
-    event SweeperUpdated(uint256 indexed agentId, address sweeper);
     event EndpointUpdated(uint256 indexed agentId, string endpoint);
+    event BondPosted(uint256 indexed agentId, address indexed operator, uint256 amount);
+    event BondWithdrawn(uint256 indexed agentId, address indexed operator, uint256 amount);
 
     // ─────────────────────────────────────────────────────────── errors ──
 
@@ -55,25 +56,20 @@ contract AgentRegistry {
     error ZeroAddress();
     error InvalidMaturity();
     error InvalidFundingGoal();
+    error VaultNotMatured();
+    error ZeroAmount();
+    error NoBond();
 
     // ──────────────────────────────────────────────────────── constructor ──
 
     constructor(address _usdc) {
-        usdc = _usdc;
+        usdc  = _usdc;
         owner = msg.sender;
     }
 
     // ──────────────────────────────────────────────────── register ──
 
     /// @notice 运营方注册一个新 agent，自动部署对应的 AgentVault。
-    /// @param owsWallet    agent 的 OWS 钱包地址
-    /// @param name         agent 名称
-    /// @param endpoint     AWS API endpoint（供 LP 了解 agent）
-    /// @param description  简介
-    /// @param maturity     vault 到期时间戳
-    /// @param fundingGoal  募资上限（USDC，6 decimals）
-    /// @param sweeper       初始 sweeper 地址（可以是运营方控制的后端钱包）
-    /// @param revenueTypes  收益来源位掩码 (0x01=x402, 0x02=subscription, 0x04=trading)
     function registerAgent(
         address owsWallet,
         string calldata name,
@@ -81,7 +77,6 @@ contract AgentRegistry {
         string calldata description,
         uint256 maturity,
         uint256 fundingGoal,
-        address sweeper,
         uint8   revenueTypes
     ) external returns (uint256 agentId, address vault) {
         if (owsWallet == address(0)) revert ZeroAddress();
@@ -90,21 +85,14 @@ contract AgentRegistry {
 
         agentId = ++agentCount;
 
-        // 部署 vault
         AgentVault v = new AgentVault(
             usdc,
-            msg.sender,  // operator
-            address(this),
+            msg.sender,   // operator
             owsWallet,
             maturity,
             fundingGoal
         );
         vault = address(v);
-
-        // 设置 sweeper
-        if (sweeper != address(0)) {
-            v.setSweeper(sweeper);
-        }
 
         agents[agentId] = AgentInfo({
             operator:     msg.sender,
@@ -114,7 +102,8 @@ contract AgentRegistry {
             endpoint:     endpoint,
             description:  description,
             revenueTypes: revenueTypes,
-            registeredAt: block.timestamp
+            registeredAt: block.timestamp,
+            bondAmount:   0
         });
 
         walletToAgent[owsWallet] = agentId;
@@ -122,23 +111,35 @@ contract AgentRegistry {
         emit AgentRegistered(agentId, msg.sender, vault, owsWallet, name);
     }
 
+    // ──────────────────────────────────────────────── bond ──
+
+    /// @notice 运营方为 trading agent 质押 USDC bond，增强 LP 信任。
+    function postBond(uint256 agentId, uint256 amount) external {
+        AgentInfo storage info = agents[agentId];
+        if (msg.sender != info.operator) revert NotOperator();
+        if (amount == 0) revert ZeroAmount();
+
+        IERC20(usdc).transferFrom(msg.sender, address(this), amount);
+        info.bondAmount += amount;
+
+        emit BondPosted(agentId, msg.sender, amount);
+    }
+
+    /// @notice vault 到期后运营方取回 bond。
+    function withdrawBond(uint256 agentId) external {
+        AgentInfo storage info = agents[agentId];
+        if (msg.sender != info.operator) revert NotOperator();
+        if (info.bondAmount == 0) revert NoBond();
+        if (block.timestamp < AgentVault(info.vault).maturity()) revert VaultNotMatured();
+
+        uint256 amount = info.bondAmount;
+        info.bondAmount = 0;
+        IERC20(usdc).transfer(msg.sender, amount);
+
+        emit BondWithdrawn(agentId, msg.sender, amount);
+    }
+
     // ──────────────────────────────────────────────── operator actions ──
-
-    /// @notice 运营方更新 sweeper 地址（如更换后端钱包）。
-    function setSweeper(uint256 agentId, address sweeper) external {
-        AgentInfo storage info = agents[agentId];
-        if (msg.sender != info.operator) revert NotOperator();
-
-        AgentVault(info.vault).setSweeper(sweeper);
-        emit SweeperUpdated(agentId, sweeper);
-    }
-
-    /// @notice 运营方授权/撤销收益来源（如 SubscriptionPayment 合约地址）。
-    function setAuthorizedSource(uint256 agentId, address source, bool authorized) external {
-        AgentInfo storage info = agents[agentId];
-        if (msg.sender != info.operator) revert NotOperator();
-        AgentVault(info.vault).setAuthorizedSource(source, authorized);
-    }
 
     /// @notice 运营方更新 AWS endpoint。
     function updateEndpoint(uint256 agentId, string calldata endpoint) external {
@@ -158,7 +159,6 @@ contract AgentRegistry {
         return agents[walletToAgent[owsWallet]];
     }
 
-    /// @notice 返回所有 agent 列表（分页）。
     function listAgents(uint256 offset, uint256 limit)
         external
         view
@@ -172,7 +172,7 @@ contract AgentRegistry {
 
         result = new AgentInfo[](end - offset);
         for (uint256 i = offset; i < end; i++) {
-            result[i - offset] = agents[i + 1]; // agentId starts at 1
+            result[i - offset] = agents[i + 1];
         }
     }
 }

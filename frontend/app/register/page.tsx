@@ -17,17 +17,20 @@ const REVENUE_TYPES = [
   {
     bit:   0x01,
     label: "x402 Pay-per-use",
-    desc:  "Users pay USDC per API call via the x402 HTTP protocol. Revenue lands in your OWS wallet and is periodically swept into the vault.",
+    desc:  "Users pay USDC per API call via the x402 HTTP protocol. Revenue lands directly in your vault — fully trustless.",
+    trust: "trustless",
   },
   {
     bit:   0x02,
     label: "Subscription",
-    desc:  "Users pay a recurring on-chain fee for access. Payments flow directly into the vault — no sweep required.",
+    desc:  "Users pay a recurring on-chain fee for access. Payments flow directly into the vault via smart contract — fully trustless.",
+    trust: "trustless",
   },
   {
     bit:   0x04,
     label: "Trading / On-chain fees",
-    desc:  "Agent earns from on-chain activity (arbitrage, LP fees, etc.). Profits are swept from the OWS wallet into the vault.",
+    desc:  "Agent earns from on-chain activity (arbitrage, LP fees, etc.). Requires operator to transfer profits into vault — bond recommended.",
+    trust: "trusted",
   },
 ];
 
@@ -37,7 +40,7 @@ export default function RegisterPage() {
 
   const [form, setForm] = useState({
     owsWallet: "", name: "", endpoint: "", description: "",
-    termIndex: 1, fundingGoal: "", sweeper: "", revenueTypes: 0,
+    termIndex: 1, fundingGoal: "", revenueTypes: 0,
   });
 
   const { writeContract, data: txHash, isPending, error } = useWriteContract();
@@ -58,7 +61,8 @@ export default function RegisterPage() {
   const toggleBit = (bit: number) =>
     setForm((f) => ({ ...f, revenueTypes: f.revenueTypes ^ bit }));
 
-  const canSubmit = !!form.name && !!form.owsWallet && !!form.endpoint && !!form.fundingGoal && form.revenueTypes !== 0;
+  const hasTrading = (form.revenueTypes & 0x04) !== 0;
+  const canSubmit  = !!form.name && !!form.owsWallet && !!form.endpoint && !!form.fundingGoal && form.revenueTypes !== 0;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,7 +75,6 @@ export default function RegisterPage() {
         form.name, form.endpoint, form.description,
         maturity,
         parseUnits(form.fundingGoal, 6),
-        (form.sweeper || address) as `0x${string}`,
         form.revenueTypes,
       ],
     });
@@ -109,7 +112,7 @@ export default function RegisterPage() {
             <TextInput placeholder="Research Assistant v1" value={form.name} onChange={(v) => set("name", v)} required />
           </Field>
           <Field label="Description">
-            <TextInput textarea placeholder="What does your agent do? What data does it use? What&apos;s its edge?" value={form.description} onChange={(v) => set("description", v)} />
+            <TextInput textarea placeholder="What does your agent do? What data does it use?" value={form.description} onChange={(v) => set("description", v)} />
           </Field>
         </FieldGroup>
 
@@ -118,11 +121,8 @@ export default function RegisterPage() {
           <Field label="OWS Wallet Address" required hint="Created with ows wallet create. x402 payments and trading profits land here before being swept into the vault.">
             <TextInput mono placeholder="0x…" value={form.owsWallet} onChange={(v) => set("owsWallet", v)} required />
           </Field>
-          <Field label="AWS Endpoint" required hint="Your agent&apos;s public API URL. x402 clients call this directly; subscription access is also validated here.">
+          <Field label="Agent Endpoint" required hint="Your agent's public API URL.">
             <TextInput placeholder="https://agent.example.com" value={form.endpoint} onChange={(v) => set("endpoint", v)} required />
-          </Field>
-          <Field label="Sweeper Address" hint="The EOA your backend uses to call receiveRevenue() on the vault. Leave blank to use your connected wallet.">
-            <TextInput mono placeholder="0x… (optional)" value={form.sweeper} onChange={(v) => set("sweeper", v)} />
           </Field>
         </FieldGroup>
 
@@ -135,7 +135,7 @@ export default function RegisterPage() {
             How does your agent earn? Select all that apply.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {REVENUE_TYPES.map(({ bit, label, desc }) => {
+            {REVENUE_TYPES.map(({ bit, label, desc, trust }) => {
               const active = (form.revenueTypes & bit) !== 0;
               return (
                 <button
@@ -162,14 +162,37 @@ export default function RegisterPage() {
                   }}>
                     {active && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-bright)", marginBottom: 3 }}>{label}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-bright)" }}>{label}</span>
+                      <span style={{
+                        fontSize: 10, padding: "1px 6px", borderRadius: 10, fontFamily: "var(--mono)",
+                        background: trust === "trustless" ? "rgba(100,200,100,0.1)" : "rgba(217,112,89,0.1)",
+                        color:      trust === "trustless" ? "#6bc97a"               : "var(--accent)",
+                        border:     `1px solid ${trust === "trustless" ? "rgba(100,200,100,0.25)" : "rgba(217,112,89,0.25)"}`,
+                      }}>
+                        {trust}
+                      </span>
+                    </div>
                     <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.55 }}>{desc}</div>
                   </div>
                 </button>
               );
             })}
           </div>
+
+          {/* trading bond notice */}
+          {hasTrading && (
+            <div style={{
+              marginTop: 10, padding: "12px 14px", borderRadius: 7,
+              background: "rgba(217,112,89,0.06)", border: "1px solid rgba(217,112,89,0.2)",
+              fontSize: 12, color: "var(--muted)", lineHeight: 1.6,
+            }}>
+              <span style={{ color: "var(--accent)", fontWeight: 600 }}>Trading agents require a bond.</span>{" "}
+              After registration, post USDC collateral on your agent page to signal trustworthiness to LPs.
+              LPs can verify the bond amount on-chain.
+            </div>
+          )}
         </div>
 
         {/* vault config */}
@@ -210,6 +233,19 @@ export default function RegisterPage() {
             </div>
           </Field>
         </FieldGroup>
+
+        {/* x402 notice */}
+        {(form.revenueTypes & 0x01) !== 0 && (
+          <div style={{
+            padding: "12px 14px", borderRadius: 7,
+            background: "rgba(100,200,100,0.04)", border: "1px solid rgba(100,200,100,0.15)",
+            fontSize: 12, color: "var(--muted)", lineHeight: 1.6,
+          }}>
+            <span style={{ color: "#6bc97a", fontWeight: 600 }}>x402 setup:</span>{" "}
+            After registration, your agent page will show your vault address.
+            Set it as <code style={{ fontFamily: "var(--mono)", fontSize: 11 }}>payTo</code> in your x402 server — revenue flows directly on-chain with no intermediary.
+          </div>
+        )}
 
         {error && (
           <div style={{

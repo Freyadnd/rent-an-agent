@@ -15,6 +15,7 @@ interface AgentInfo {
   description:  string;
   revenueTypes: number;
   registeredAt: bigint;
+  bondAmount:   bigint;
 }
 
 const REVENUE_LABELS = [
@@ -52,6 +53,10 @@ export function AgentCard({ agentId, info }: { agentId: number; info: AgentInfo 
   const timeStr     = timeLeftSec ? fmtTimeLeft(timeLeftSec) : null;
 
   const revenueLabels = REVENUE_LABELS.filter(({ bit }) => (info.revenueTypes & bit) !== 0);
+
+  // trust tier: trustless if no trading bit
+  const isTrustless  = (info.revenueTypes & 0x04) === 0;
+  const hasBond       = info.bondAmount > 0n;
 
   return (
     <Link href={`/agents/${agentId}`} style={{ textDecoration: "none", display: "block" }}>
@@ -99,17 +104,37 @@ export function AgentCard({ agentId, info }: { agentId: number; info: AgentInfo 
             </div>
           </div>
 
-          <div style={{
-            fontSize: 11,
-            padding: "3px 8px",
-            borderRadius: 20,
-            border: `1px solid ${matured ? "var(--border)" : "var(--accent)"}`,
-            color: matured ? "var(--muted)" : "var(--accent)",
-            whiteSpace: "nowrap",
-            flexShrink: 0,
-            fontWeight: 500,
-          }}>
-            {matured ? "matured" : "active"}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+            <div style={{
+              fontSize: 11,
+              padding: "3px 8px",
+              borderRadius: 20,
+              border: `1px solid ${matured ? "var(--border)" : "var(--accent)"}`,
+              color: matured ? "var(--muted)" : "var(--accent)",
+              fontWeight: 500,
+            }}>
+              {matured ? "matured" : "active"}
+            </div>
+
+            {/* trust tier badge */}
+            {isTrustless ? (
+              <div style={{
+                fontSize: 10, padding: "2px 7px", borderRadius: 10, fontFamily: "var(--mono)",
+                background: "rgba(100,200,100,0.08)", color: "#6bc97a",
+                border: "1px solid rgba(100,200,100,0.2)",
+              }}>
+                trustless
+              </div>
+            ) : (
+              <div style={{
+                fontSize: 10, padding: "2px 7px", borderRadius: 10, fontFamily: "var(--mono)",
+                background: hasBond ? "rgba(217,112,89,0.08)" : "rgba(248,113,113,0.08)",
+                color:      hasBond ? "var(--accent)"          : "#f87171",
+                border:     `1px solid ${hasBond ? "rgba(217,112,89,0.2)" : "rgba(248,113,113,0.2)"}`,
+              }}>
+                {hasBond ? "bonded" : "trusted"}
+              </div>
+            )}
           </div>
         </div>
 

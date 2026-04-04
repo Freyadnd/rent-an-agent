@@ -209,6 +209,7 @@ function AgentItem({ agentId }: { agentId: number }) {
         description:  data.description,
         revenueTypes: data.revenueTypes,
         registeredAt: data.registeredAt,
+        bondAmount:   data.bondAmount,
       }}
     />
   );

@@ -1,24 +1,82 @@
 /**
  * server.ts — Express server exposing:
  *
- *   GET  /health           — 健康检查
- *   GET  /vault/status     — vault 状态（LP 仪表盘用）
+ *   GET  /health           — health check
+ *   GET  /vault/status     — vault status (LP dashboard)
  *
- *   ── x402 付费端点 ──
- *   GET  /agent/query      — 按次付费，返回 402 if unpaid
- *   POST /agent/task       — 按次付费任务提交
+ *   ── x402 pay-per-use ──
+ *   GET  /agent/query      — pay-per-use, returns 402 with payTo = vault address
+ *   POST /agent/task       — pay-per-use task submission
  *
- *   ── 订阅验证（链上查询）──
- *   GET  /agent/chat       — 需要有效链上订阅
+ *   ── subscription (on-chain check) ──
+ *   POST /agent/chat       — requires valid on-chain subscription
  *
- *   ── 管理 ──
- *   POST /admin/sweep      — 手动触发 sweep（用于测试）
+ * Revenue architecture:
+ *   x402 payTo = vault address (read from AgentRegistry on startup).
+ *   Payments land directly in vault — no sweeper, no intermediary.
  */
 
 import express, { Request, Response, NextFunction } from "express";
 import { config } from "./config.js";
-import { getVaultStatus, sweepToVault, getUsdcBalance, getSweeperWalletClient } from "./vault.js";
+import { getVaultStatus, publicClient } from "./vault.js";
 import { checkOnChainSubscription } from "./subscription.js";
+
+// ─── read vault address from registry at startup ──────────────────────────────
+
+const REGISTRY_ABI = [
+  {
+    name: "getAgent",
+    type: "function",
+    inputs: [{ name: "agentId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "operator",     type: "address" },
+          { name: "owsWallet",    type: "address" },
+          { name: "vault",        type: "address" },
+          { name: "name",         type: "string"  },
+          { name: "endpoint",     type: "string"  },
+          { name: "description",  type: "string"  },
+          { name: "revenueTypes", type: "uint8"   },
+          { name: "registeredAt", type: "uint256" },
+          { name: "bondAmount",   type: "uint256" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+] as const;
+
+let vaultAddress: `0x${string}` = config.vaultAddress ?? "0x0000000000000000000000000000000000000000";
+
+async function resolveVaultAddress() {
+  if (config.vaultAddress) {
+    vaultAddress = config.vaultAddress;
+    console.log(`[server] Vault address (from env): ${vaultAddress}`);
+    return;
+  }
+  if (!config.registryAddress || !config.agentId) return;
+
+  try {
+    const agent = await publicClient.readContract({
+      address: config.registryAddress,
+      abi: REGISTRY_ABI,
+      functionName: "getAgent",
+      args: [BigInt(config.agentId)],
+    });
+    vaultAddress = agent.vault as `0x${string}`;
+    console.log(`[server] Vault address (from registry): ${vaultAddress}`);
+  } catch (err) {
+    console.warn("[server] Could not resolve vault address from registry:", err);
+  }
+}
+
+// Resolve on startup (non-blocking)
+resolveVaultAddress();
+
+// ─── server ──────────────────────────────────────────────────────────────────
 
 export function createServer() {
   const app = express();
@@ -27,7 +85,7 @@ export function createServer() {
   // ── health ──────────────────────────────────────────────────────────────
 
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, ts: Date.now() });
+    res.json({ ok: true, ts: Date.now(), vault: vaultAddress });
   });
 
   // ── vault status ─────────────────────────────────────────────────────────
@@ -43,14 +101,12 @@ export function createServer() {
 
   // ── x402: pay-per-use query ──────────────────────────────────────────────
   //
-  // x402 protocol: server returns 402 with payment details in headers.
-  // OWS SDK automatically handles this on the client side.
+  // payTo = vault address (read from registry). Revenue lands directly in vault.
 
   app.get("/agent/query", x402Gate(1_000_000), async (req, res) => {
-    // Payment verified by x402Gate middleware.
     const question = req.query.q as string ?? "What can you do?";
     res.json({
-      answer: `[Agent response to: "${question}"] — This is a stub. Wire your LLM here.`,
+      answer: `[Agent response to: "${question}"] — Wire your LLM here.`,
       paid: true,
     });
   });
@@ -68,26 +124,9 @@ export function createServer() {
   app.post("/agent/chat", subscriptionGate(), async (req, res) => {
     const { message } = req.body as { message: string };
     res.json({
-      reply: `[Agent reply to: "${message}"] — stub. Wire your LLM here.`,
+      reply: `[Agent reply to: "${message}"] — Wire your LLM here.`,
       subscribed: true,
     });
-  });
-
-  // ── admin: manual sweep ──────────────────────────────────────────────────
-
-  app.post("/admin/sweep", adminGate(), async (_req, res) => {
-    try {
-      const { account } = getSweeperWalletClient();
-      const balance = await getUsdcBalance(account.address);
-      if (balance < 0.01) {
-        res.json({ swept: false, reason: "balance too low", balance });
-        return;
-      }
-      const txHash = await sweepToVault(balance, "manual");
-      res.json({ swept: true, amount: balance, txHash });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
   });
 
   return app;
@@ -96,31 +135,26 @@ export function createServer() {
 // ─── middleware ──────────────────────────────────────────────────────────────
 
 /**
- * x402Gate — returns 402 with payment info if the request hasn't been paid.
- * OWS client SDK handles this automatically when using `ows pay`.
- *
- * @param priceUsdc6  price in USDC with 6 decimals (e.g. 1_000_000 = 1 USDC)
+ * x402Gate — returns 402 with payment info pointing directly to vault.
+ * payTo = vault address (on-chain verifiable, trustless).
  */
 function x402Gate(priceUsdc6: number) {
   return (req: Request, res: Response, next: NextFunction) => {
     const paymentHeader = req.headers["x-payment"];
 
     if (!paymentHeader) {
-      // Return 402 with payment details for OWS SDK to process
       res.status(402).json({
         error: "Payment required",
         x402Version: 1,
         accepts: [
           {
             scheme: "exact",
-            network: "base-mainnet",
+            network: "base-sepolia",
             maxAmountRequired: String(priceUsdc6),
             resource: `${req.protocol}://${req.get("host")}${req.path}`,
             description: `Pay ${priceUsdc6 / 1e6} USDC to access this endpoint`,
             mimeType: "application/json",
-            payTo: config.sweeperPrivateKey
-              ? getSweeperWalletClient().account.address
-              : "0x0000000000000000000000000000000000000000",
+            payTo: vaultAddress,   // ← vault address, trustless
             maxTimeoutSeconds: 60,
             asset: config.usdcAddress,
             extra: { name: "USDC", version: "2" },
@@ -131,7 +165,6 @@ function x402Gate(priceUsdc6: number) {
     }
 
     // TODO: verify payment proof on-chain for production.
-    // For hackathon: trust the header, log it.
     console.log(`[x402] Payment header received: ${paymentHeader}`);
     next();
   };
@@ -139,7 +172,6 @@ function x402Gate(priceUsdc6: number) {
 
 /**
  * subscriptionGate — checks on-chain subscription status via AgentRegistry.
- * Requires `x-wallet-address` header from the client.
  */
 function subscriptionGate() {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -162,16 +194,5 @@ function subscriptionGate() {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
-  };
-}
-
-/** adminGate — simple API key check for internal admin endpoints. */
-function adminGate() {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (req.headers["x-api-key"] !== config.agentApiKey) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    next();
   };
 }
