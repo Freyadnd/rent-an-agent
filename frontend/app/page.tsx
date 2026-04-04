@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+
 import { useReadContract } from "wagmi";
 import { ADDRESSES, REGISTRY_ABI } from "@/lib/contracts";
 import { AgentCard } from "@/components/AgentCard";
@@ -23,26 +24,30 @@ export default function Home() {
         padding: "72px 40px 60px",
       }}>
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
-          <div style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "4px 12px",
-            borderRadius: 20,
-            border: "1px solid var(--accent)",
-            color: "var(--accent)",
-            fontSize: 12,
-            fontWeight: 500,
-            marginBottom: 24,
-            letterSpacing: "0.02em",
-          }}>
-            <span style={{
-              width: 6, height: 6,
-              borderRadius: "50%",
-              background: "var(--accent)",
-              display: "inline-block",
-            }} />
-            Live on Base Sepolia
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "4px 12px", borderRadius: 20,
+              border: "1px solid var(--accent)", color: "var(--accent)",
+              fontSize: 12, fontWeight: 500, letterSpacing: "0.02em",
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+              Live on Base Sepolia
+            </div>
+
+            <span style={{ color: "var(--border)", fontSize: 12 }}>·</span>
+
+            <a href="https://faucet.quicknode.com/base/sepolia" target="_blank" rel="noreferrer"
+              style={{ fontSize: 12, color: "var(--muted)", textDecoration: "none" }}>
+              Get Sepolia ETH ↗
+            </a>
+
+            <span style={{ color: "var(--border)", fontSize: 12 }}>·</span>
+
+            <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer"
+              style={{ fontSize: 12, color: "var(--muted)", textDecoration: "none" }}>
+              Get Sepolia USDC ↗
+            </a>
           </div>
 
           <h1 style={{
@@ -67,7 +72,7 @@ export default function Home() {
             Tokenized cashflows of AI agents, funded by LPs.
           </p>
 
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
             <Link href="/register" style={{
               display: "inline-block",
               padding: "10px 22px",
@@ -85,6 +90,7 @@ export default function Home() {
               or scroll down to invest →
             </span>
           </div>
+
         </div>
       </div>
 

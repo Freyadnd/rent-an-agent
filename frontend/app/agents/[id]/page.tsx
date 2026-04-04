@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import {
   useAccount, useReadContract, useReadContracts,
   useWriteContract, useWaitForTransactionReceipt,
@@ -293,10 +293,16 @@ function DepositForm({
   onSuccess:    () => void;
 }) {
   const [amount, setAmount] = useState("");
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { writeContract, data: txHash, isPending, reset } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  if (isSuccess) onSuccess();
+  useEffect(() => {
+    if (isSuccess) {
+      onSuccess();
+      reset();
+      setAmount("");
+    }
+  }, [isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const amountBig    = amount ? parseUnits(amount, 6) : 0n;
   const needsApprove = amountBig > 0n && allowance < amountBig;
@@ -356,7 +362,9 @@ function RedeemButton({ vaultAddress, onSuccess }: { vaultAddress: `0x${string}`
   const { writeContract, data: txHash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  if (isSuccess) onSuccess();
+  useEffect(() => {
+    if (isSuccess) onSuccess();
+  }, [isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <PrimaryBtn

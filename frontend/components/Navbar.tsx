@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { ConnectWallet } from "@/components/ConnectWallet";
 
 export function Navbar() {
   const path = usePathname();
@@ -52,7 +52,7 @@ export function Navbar() {
         </div>
       </nav>
 
-      <ConnectButton chainStatus="none" showBalance={false} />
+      <ConnectWallet />
     </header>
   );
 }
