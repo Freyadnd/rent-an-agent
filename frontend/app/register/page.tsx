@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from "wagmi";
 import { parseUnits } from "viem";
 import { useRouter } from "next/navigation";
@@ -43,7 +43,14 @@ export default function RegisterPage() {
   const { writeContract, data: txHash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  if (isSuccess) router.push("/");
+  useEffect(() => {
+    if (isSuccess) {
+      setTimeout(() => {
+        router.refresh();
+        router.push("/");
+      }, 1500);
+    }
+  }, [isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (key: string, value: string | number) =>
     setForm((f) => ({ ...f, [key]: value }));

@@ -5,7 +5,7 @@ import {
   useAccount, useReadContract, useReadContracts,
   useWriteContract, useWaitForTransactionReceipt,
 } from "wagmi";
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits, parseUnits, maxUint256 } from "viem";
 import { ADDRESSES, REGISTRY_ABI, VAULT_ABI, ERC20_ABI } from "@/lib/contracts";
 
 const REVENUE_LABELS = [
@@ -293,40 +293,66 @@ function DepositForm({
   onSuccess:    () => void;
 }) {
   const [amount, setAmount] = useState("");
-  const { writeContract, data: txHash, isPending, reset } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
-
-  useEffect(() => {
-    if (isSuccess) {
-      onSuccess();
-      reset();
-      setAmount("");
-    }
-  }, [isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const amountBig    = amount ? parseUnits(amount, 6) : 0n;
   const needsApprove = amountBig > 0n && allowance < amountBig;
-  const busy         = isPending || isConfirming;
+
+  // two separate hooks so we can chain approve → deposit
+  const { writeContract: approveWrite, data: approveTxHash, isPending: approvePending } = useWriteContract();
+  const { writeContract: depositWrite, data: depositTxHash, isPending: depositPending  } = useWriteContract();
+
+  const { isLoading: approveConfirming, isSuccess: approveSuccess } =
+    useWaitForTransactionReceipt({ hash: approveTxHash });
+  const { isLoading: depositConfirming, isSuccess: depositSuccess } =
+    useWaitForTransactionReceipt({ hash: depositTxHash });
+
+  // approve confirmed → auto-deposit
+  useEffect(() => {
+    if (approveSuccess && amountBig > 0n) {
+      depositWrite({ address: vaultAddress, abi: VAULT_ABI, functionName: "deposit", args: [amountBig] });
+    }
+  }, [approveSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // deposit confirmed → refresh after short delay for chain state
+  useEffect(() => {
+    if (depositSuccess) {
+      setTimeout(() => { onSuccess(); }, 1500);
+      setAmount("");
+    }
+  }, [depositSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const busy = approvePending || approveConfirming || depositPending || depositConfirming;
+
+  function getLabel() {
+    if (approvePending || approveConfirming) return "Approving…";
+    if (depositPending || depositConfirming) return "Depositing…";
+    return "Deposit";
+  }
+
+  function handleDeposit() {
+    if (needsApprove) {
+      approveWrite({ address: ADDRESSES.usdc, abi: ERC20_ABI, functionName: "approve", args: [vaultAddress, maxUint256] });
+    } else {
+      depositWrite({ address: vaultAddress, abi: VAULT_ABI, functionName: "deposit", args: [amountBig] });
+    }
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", gap: 8 }}>
-        <div style={{ position: "relative", flex: 1 }}>
-          <input
-            type="number" placeholder="0.00" value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            style={{
-              width: "100%",
-              background: "var(--dark-8)",
-              border: "1px solid var(--border)",
-              borderRadius: 7,
-              padding: "11px 16px",
-              fontSize: 15,
-              outline: "none",
-              color: "var(--text-bright)",
-            }}
-          />
-        </div>
+        <input
+          type="number" placeholder="0.00" value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          style={{
+            flex: 1,
+            background: "var(--dark-8)",
+            border: "1px solid var(--border)",
+            borderRadius: 7,
+            padding: "11px 16px",
+            fontSize: 15,
+            outline: "none",
+            color: "var(--text-bright)",
+          }}
+        />
         <button
           onClick={() => setAmount(usdcBalance.toFixed(2))}
           style={{
@@ -343,16 +369,13 @@ function DepositForm({
 
       <div style={{ fontSize: 12, color: "var(--muted)" }}>
         Balance: {fmt(usdcBalance)} USDC
+        {needsApprove && !busy && (
+          <span style={{ marginLeft: 8, color: "var(--accent)" }}>· One-time approval required</span>
+        )}
       </div>
 
-      <PrimaryBtn
-        onClick={needsApprove
-          ? () => writeContract({ address: ADDRESSES.usdc, abi: ERC20_ABI, functionName: "approve", args: [vaultAddress, amountBig] })
-          : () => writeContract({ address: vaultAddress, abi: VAULT_ABI, functionName: "deposit", args: [amountBig] })
-        }
-        disabled={!amount || busy}
-      >
-        {busy ? "Waiting for transaction…" : needsApprove ? "Approve USDC" : "Deposit"}
+      <PrimaryBtn onClick={handleDeposit} disabled={!amount || amountBig === 0n || busy}>
+        {getLabel()}
       </PrimaryBtn>
     </div>
   );
